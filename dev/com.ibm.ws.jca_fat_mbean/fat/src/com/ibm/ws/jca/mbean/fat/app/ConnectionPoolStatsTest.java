@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022, 2023 IBM Corporation and others.
+ * Copyright (c) 2022, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -228,6 +228,18 @@ public class ConnectionPoolStatsTest {
     @Test
     @ExpectedFFDC({ "com.ibm.websphere.ce.j2c.ConnectionWaitTimeoutException" })
     public void testGetWaitTime() throws Exception {
+        final String fvtweb = "fvtweb/ConnectionPoolStatsServlet";
+        runInServlet(testName.getMethodName(), fvtweb);
+    }
+
+    /**
+     * Test that a wait time recorded while the pool was full stays reported until the
+     * resetWaitAndInUseTimeStats operation is invoked, and that WaitTime, InUseTime and the
+     * StatisticsMeter details are cleared by it.
+     */
+    @Test
+    @ExpectedFFDC({ "com.ibm.websphere.ce.j2c.ConnectionWaitTimeoutException" })
+    public void testResetWaitAndInUseTimeStats() throws Exception {
         final String fvtweb = "fvtweb/ConnectionPoolStatsServlet";
         runInServlet(testName.getMethodName(), fvtweb);
     }

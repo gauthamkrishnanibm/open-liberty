@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2022, 2023 IBM Corporation and others.
+ * Copyright (c) 2022, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -36,9 +36,11 @@ import javax.management.JMX;
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanException;
 import javax.management.MBeanInfo;
+import javax.management.MBeanOperationInfo;
 import javax.management.MBeanServer;
 import javax.management.ObjectInstance;
 import javax.management.ObjectName;
+import javax.management.openmbean.CompositeData;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -81,6 +83,9 @@ public class ConnectionPoolStatsServlet extends HttpServlet {
 
     @Resource(name = "jdbc/waitTimeDS", shareable = false, authenticationType = AuthenticationType.APPLICATION)
     DataSource waitTimeDS;
+
+    @Resource(name = "jdbc/resetStatsDS", shareable = false, authenticationType = AuthenticationType.APPLICATION)
+    DataSource resetStatsDS;
 
     @Resource(name = "jdbc/multiThreadDS", shareable = false, authenticationType = AuthenticationType.APPLICATION)
     DataSource multiThreadDS;
@@ -1268,6 +1273,98 @@ public class ConnectionPoolStatsServlet extends HttpServlet {
         }
     }
 
+    /**
+     * A wait time recorded while the pool was exhausted must stay visible until the statistics are reset,
+     * and must be gone after the resetWaitAndInUseTimeStats operation is invoked. Statistics recorded after the
+     * reset must reflect only the activity that happened after the reset.
+     *
+     * Uses resetStatsDS, which has maxPoolSize=1 and connectionTimeout=2s.
+     */
+    public void testResetWaitAndInUseTimeStats(HttpServletRequest request, HttpServletResponse response) throws Throwable {
+        Connection conn = resetStatsDS.getConnection(); // creates the MBean, and exhausts the pool of size 1
+        Connection conn2 = null;
+        try {
+            ObjectName objName = getConnPoolStatsMBeanObjName("resetStatsDS");
+
+            // The reset operation must be exposed on the MBean
+            boolean found = false;
+            for (MBeanOperationInfo op : mbeanServer.getMBeanInfo(objName).getOperations()) {
+                if ("resetWaitAndInUseTimeStats".equals(op.getName())) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                throw new Exception("Operation resetWaitAndInUseTimeStats was not found on " + objName);
+            }
+
+            double initialWaitTime = (Double) mbeanServer.getAttribute(objName, "WaitTime");
+            if (Double.compare(initialWaitTime, 0) != 0) {
+                throw new Exception("Expected wait time to be 0 before any waiters, but was: " + initialWaitTime);
+            }
+
+            // The pool is exhausted so this request waits for connectionTimeout (2s) and fails
+            try {
+                conn2 = resetStatsDS.getConnection();
+                throw new Exception("Expected the second connection request to time out, but a connection was returned");
+            } catch (SQLException e) {
+                // expected
+            }
+
+            // The problem is resolved: free the connection
+            conn.close();
+
+            // The transient wait must still be reported, this is the behavior that the reset operation is for
+            double waitTimeBeforeReset = (Double) mbeanServer.getAttribute(objName, "WaitTime");
+            double inUseTimeBeforeReset = (Double) mbeanServer.getAttribute(objName, "InUseTime");
+            long waitCountBeforeReset = getDetailsCount(objName, "WaitTimeDetails");
+            long inUseCountBeforeReset = getDetailsCount(objName, "InUseTimeDetails");
+            if (waitTimeBeforeReset <= 0) { // waited about 2000 ms
+                throw new Exception("Expected wait time to be greater than 0 before the reset, but was: " + waitTimeBeforeReset);
+            }
+            if (inUseTimeBeforeReset <= 0) {
+                throw new Exception("Expected in use time to be greater than 0 before the reset, but was: " + inUseTimeBeforeReset);
+            }
+            if (waitCountBeforeReset < 1 || inUseCountBeforeReset < 1) {
+                throw new Exception("Expected data points before the reset. Wait: " + waitCountBeforeReset + " in use: " + inUseCountBeforeReset);
+            }
+
+            mbeanServer.invoke(objName, "resetWaitAndInUseTimeStats", null, null);
+
+            double waitTimeAfterReset = (Double) mbeanServer.getAttribute(objName, "WaitTime");
+            double inUseTimeAfterReset = (Double) mbeanServer.getAttribute(objName, "InUseTime");
+            long waitCountAfterReset = getDetailsCount(objName, "WaitTimeDetails");
+            long inUseCountAfterReset = getDetailsCount(objName, "InUseTimeDetails");
+            if (Double.compare(waitTimeAfterReset, 0) != 0) {
+                throw new Exception("Expected wait time to be 0 after the reset, but was: " + waitTimeAfterReset + " (before: " + waitTimeBeforeReset + ")");
+            }
+            if (Double.compare(inUseTimeAfterReset, 0) != 0) {
+                throw new Exception("Expected in use time to be 0 after the reset, but was: " + inUseTimeAfterReset + " (before: " + inUseTimeBeforeReset + ")");
+            }
+            if (waitCountAfterReset != 0 || inUseCountAfterReset != 0) {
+                throw new Exception("Expected no data points after the reset. Wait: " + waitCountAfterReset + " in use: " + inUseCountAfterReset);
+            }
+
+            // Activity after the reset is measured on its own: no wait, one use
+            Connection conn3 = resetStatsDS.getConnection();
+            conn3.close();
+
+            double waitTimeAfterUse = (Double) mbeanServer.getAttribute(objName, "WaitTime");
+            long waitCountAfterUse = getDetailsCount(objName, "WaitTimeDetails");
+            long inUseCountAfterUse = getDetailsCount(objName, "InUseTimeDetails");
+            if (Double.compare(waitTimeAfterUse, 0) != 0 || waitCountAfterUse != 0) {
+                throw new Exception("Expected no wait after the reset, but wait time was " + waitTimeAfterUse + " from " + waitCountAfterUse + " data points");
+            }
+            if (inUseCountAfterUse < 1) {
+                throw new Exception("Expected an in use data point after the reset, but found: " + inUseCountAfterUse);
+            }
+        } finally {
+            if (conn != null && !conn.isClosed())
+                conn.close();
+            if (conn2 != null && !conn2.isClosed())
+                conn2.close();
+        }
+    }
+
     public void testGetMaxConnectionsLimit(HttpServletRequest request, HttpServletResponse response) throws Throwable {
         Connection conn = ds1_maxconlimit.getConnection();
         try {
@@ -1486,6 +1583,14 @@ public class ConnectionPoolStatsServlet extends HttpServlet {
 
     private int getMonitorData(ObjectName name, String attribute) throws Exception {
         return Integer.parseInt((mbeanServer.getAttribute(name, attribute)).toString());
+    }
+
+    /**
+     * @param attribute WaitTimeDetails or InUseTimeDetails
+     * @return the number of data points recorded by the StatisticsMeter
+     */
+    private long getDetailsCount(ObjectName name, String attribute) throws Exception {
+        return (Long) ((CompositeData) mbeanServer.getAttribute(name, attribute)).get("count");
     }
 
     private ConnectionManagerMBean getConnectionManagerBean(String jndiName) throws Exception {

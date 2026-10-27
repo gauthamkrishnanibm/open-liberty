@@ -36,6 +36,12 @@
     	<properties.derby.embedded databaseName="memory:waitTimeDS" createDatabase="create" user="dbuser1" password="{xor}Oz0vKDtu" />
     </dataSource>
     
+    <!-- Note that this datasource should only by used by the testResetWaitAndInUseTimeStats test -->
+    <dataSource id="resetStatsDS" jndiName="jdbc/resetStatsDS" jdbcDriverRef="FATJDBCDriver">
+        <connectionManager maxPoolSize="1" connectionTimeout="2s"/>
+        <properties.derby.embedded databaseName="memory:resetStatsDS" createDatabase="create" user="dbuser1" password="{xor}Oz0vKDtu" />
+    </dataSource>
+
     <dataSource id="sharedDS" jndiName="jdbc/sharedDS" jdbcDriverRef="FATJDBCDriver">		
      	<properties.derby.embedded databaseName="memory:sharedDS" createDatabase="create" user="dbuser1" password="{xor}Oz0vKDtu" />		
      </dataSource>		
