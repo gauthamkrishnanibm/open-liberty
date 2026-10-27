@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2013, 2023 IBM Corporation and others.
+ * Copyright (c) 2013, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -152,6 +152,15 @@ public class ConnectionPoolStats extends Meter implements ConnectionPoolStatsMXB
     @Override
     public StatisticsMeter getInUseTimeDetails() {
         return this.inUseTime;
+    }
+
+    @Override
+    public void resetWaitAndInUseTimeStats() {
+        this.waitTime.reset();
+        this.inUseTime.reset();
+        if (tc.isDebugEnabled()) {
+            Tr.debug(tc, "Wait time and in use time statistics were reset");
+        }
     }
 
     @Override

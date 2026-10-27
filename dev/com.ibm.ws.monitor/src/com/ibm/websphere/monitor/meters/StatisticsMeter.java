@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2010, 2023 IBM Corporation and others.
+ * Copyright (c) 2010, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -70,6 +70,15 @@ public class StatisticsMeter extends com.ibm.websphere.monitor.jmx.StatisticsMet
             varianceNumeratorSum += delta * (value - mean);
             min = Math.min(min, value);
             max = Math.max(max, value);
+        }
+
+        synchronized void reset() {
+            count = 0;
+            min = 0;
+            max = 0;
+            total = 0;
+            mean = 0;
+            varianceNumeratorSum = 0;
         }
 
         synchronized StatsData getCopy() {
@@ -188,6 +197,23 @@ public class StatisticsMeter extends com.ibm.websphere.monitor.jmx.StatisticsMet
      */
     public void addDataPoint(long value) {
         threadStats.getStatsData().addDataPoint(value);
+    }
+
+    /**
+     * Discard all data points that have been added to this meter so that
+     * subsequent readings reflect only data points added after this call.
+     * <p>
+     * The meter instance itself is retained, so callers that hold a
+     * reference to it continue to observe current values.
+     */
+    public void reset() {
+        synchronized (allReferences) {
+            for (StatsDataReference ref : allReferences) {
+                ref.statsData.reset();
+            }
+            terminatedThreadStats.set(new StatsData());
+        }
+        cleanup();
     }
 
     /**

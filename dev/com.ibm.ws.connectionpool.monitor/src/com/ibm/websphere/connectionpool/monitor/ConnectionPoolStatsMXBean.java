@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2013, 2023 IBM Corporation and others.
+ * Copyright (c) 2013, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -113,4 +113,14 @@ public interface ConnectionPoolStatsMXBean {
      * @return maximum connection count
      */
     public long getMaxConnectionsLimit();
+
+    /**
+     * Resets the statistics reported by {@link #getWaitTimeDetails()}, {@link #getInUseTimeDetails()}, {@link #getWaitTime()} and {@link #getInUseTime()}.
+     * Data points recorded before the reset are discarded, so that subsequent readings reflect only connection requests that occur after the reset.
+     * The StatisticMeter objects returned by the getter methods remain valid after a reset.
+     *
+     * <p>Note that this also resets the count and total values that are used to publish connection pool metrics from the same statistics, such as
+     * the queued requests and total wait time metrics.</p>
+     */
+    public void resetWaitAndInUseTimeStats();
 }

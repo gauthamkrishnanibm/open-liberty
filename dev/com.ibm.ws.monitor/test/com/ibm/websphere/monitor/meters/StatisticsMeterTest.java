@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2017 IBM Corporation and others.
+ * Copyright (c) 2017, 2026 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
@@ -128,6 +128,43 @@ public class StatisticsMeterTest {
         assertEquals("Incorrect total", controlMeter.getTotal(), combined.total, STANDARD_EPSILON);
         assertEquals("Incorrect mean", controlMeter.getMean(), combined.mean, STANDARD_EPSILON);
         assertEquals("Incorrect variance", controlMeter.getVariance(), combined.getVariance(), STANDARD_EPSILON);
+    }
+
+    @Test
+    public void testReset() {
+        statsMeter.addDataPoint(10000);
+        statsMeter.addDataPoint(20000);
+        assertEquals(2L, statsMeter.getCount());
+
+        statsMeter.reset();
+
+        assertEquals(0L, statsMeter.getCount());
+        assertEquals(0L, statsMeter.getMinimumValue());
+        assertEquals(0L, statsMeter.getMaximumValue());
+        assertEquals(0.0, statsMeter.getTotal(), STANDARD_EPSILON);
+        assertEquals(0.0, statsMeter.getMean(), STANDARD_EPSILON);
+        assertEquals(0.0, statsMeter.getVariance(), STANDARD_EPSILON);
+
+        // The same meter instance reflects only data added after the reset.
+        statsMeter.addDataPoint(5);
+        assertEquals(1L, statsMeter.getCount());
+        assertEquals(5L, statsMeter.getMinimumValue());
+        assertEquals(5L, statsMeter.getMaximumValue());
+        assertEquals(5.0, statsMeter.getMean(), STANDARD_EPSILON);
+    }
+
+    @Test
+    public void testResetClearsOtherThreadsAndTerminatedThreads() throws Exception {
+        Thread t = new Thread(() -> statsMeter.addDataPoint(10000));
+        t.start();
+        t.join();
+        statsMeter.addDataPoint(20000);
+        assertEquals(2L, statsMeter.getCount());
+
+        statsMeter.reset();
+
+        assertEquals(0L, statsMeter.getCount());
+        assertEquals(0.0, statsMeter.getMean(), STANDARD_EPSILON);
     }
 
     @Test
